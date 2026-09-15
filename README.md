@@ -56,7 +56,7 @@ go version
 ### Step 2: Clone the Application Workspace
 Open your system terminal/command prompt and clone this public repository:
 ```bash
-git clone https://github.com
+git clone https://github.com/Chakar-Randhawa/anti-bot-proxy-engine.git
 cd anti-bot-proxy
 ```
 
