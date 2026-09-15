@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Anti-Bot Proxy Analytics Control Panel</title>
+    <!-- FIX: Correct & Active Global Tailwind Play Engine CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans min-h-screen flex flex-col selection:bg-blue-600 selection:text-white">
+
+    <!-- Header Panel -->
+    <header class="bg-gray-900 border-b border-gray-800 p-5 flex justify-between items-center shadow-xl">
+        <div class="flex items-center gap-3">
+            <div class="h-3 w-3 bg-emerald-500 rounded-full animate-pulse"></div>
+            <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">
+                A.B.M.E. Proxy Core Pipeline
+            </h1>
+        </div>
+        <div class="text-xs font-mono bg-gray-800 px-3 py-1.5 rounded border border-gray-700 text-gray-400">
+            ENGINE CHANNEL: <span class="text-blue-400">ws://localhost:8081/ws</span>
+        </div>
+    </header>
+
+    <!-- Main Workspace Dashboard Grid -->
+    <main class="flex-1 p-6 flex flex-col gap-6 overflow-hidden max-w-[1600px] w-full mx-auto">
+        
+        <!-- Metrics Charts Layout Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Interception Volume Graph -->
+            <div class="lg:col-span-2 bg-gray-900 border border-gray-800 p-5 rounded-xl shadow-2xl flex flex-col h-80">
+                <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Live Request Volume (Throughput/s)</h2>
+                <div class="flex-1 relative">
+                    <canvas id="requestsChart"></canvas>
+                </div>
+            </div>
+            <!-- Success/Block Metrics Target -->
+            <div class="bg-gray-900 border border-gray-800 p-5 rounded-xl shadow-2xl flex flex-col h-80">
+                <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Bypass Success Evaluation</h2>
+                <div class="flex-1 relative flex items-center justify-center">
+                    <canvas id="successChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Trace Logs Console Display Layer -->
+        <div class="bg-gray-900 border border-gray-800 p-5 rounded-xl shadow-2xl flex-1 flex flex-col min-h-[350px]">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Real-Time Core Interception Streaming Logs</h2>
+                <span class="text-xs bg-gray-800 text-gray-400 font-mono px-2 py-0.5 rounded border border-gray-700">STDOUT Stream</span>
+            </div>
+            <div class="flex-1 font-mono text-xs overflow-y-auto max-h-[400px] border border-gray-800 rounded-lg p-4 bg-black/50 shadow-inner space-y-1.5 custom-scrollbar" id="logContainer">
+                <div class="text-gray-500 italic p-1">[Engine Standby] Awaiting proxy client routing synchronization telemetry...</div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    const ws = new WebSocket('ws://localhost:8081/ws');
+
+    const requestsCtx = document.getElementById('requestsChart').getContext('2d');
+    const successCtx = document.getElementById('successChart').getContext('2d');
+
+    const maxDataPoints = 30;
+    const requestsChart = new Chart(requestsCtx, {
+        type: 'line',
+        data: {
+            labels: Array(maxDataPoints).fill(''),
+            datasets: [{
+                label: 'Requests Intercepted',
+                data: Array(maxDataPoints).fill(0),
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                fill: true,
+                tension: 0.35,
+                borderWidth: 2,
+                pointRadius: 0
+            }]
+        },
+        options: {
+            animation: { duration: 200 },
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { display: false } },
+                y: { grid: { color: '#1f2937' }, beginAtZero: true }
+            }
+        }
+    });
+
+    const successChart = new Chart(successCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Success (2xx/3xx)', 'Blocked/Anomalies'],
+            datasets: [{
+                data:[0, 0],
+                backgroundColor: ['#10b981', '#ef4444'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { color: '#9ca3af', font: { size: 11 } } }
+            },
+            cutout: '75%'
+        }
+    });
+
+    const logContainer = document.getElementById('logContainer');
+    let initialClean = false;
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "snapshot") {
+            // FIX: Array array lookup matching core configuration bounds mapped accurately
+            const recentData = requestsChart.data.datasets[0].data;
+            recentData.shift();
+            recentData.push(data.requests);
+            requestsChart.update();
+
+            successChart.data.datasets[0].data[0] = data.success;
+            successChart.data.datasets[0].data[1] = data.blocks;
+            successChart.update();
+        } 
+        
+        if (data.type === "log") {
+            if (!initialClean) {
+                logContainer.innerHTML = '';
+                initialClean = true;
+            }
+            
+            const statusColor = data.statusCode >= 200 && data.statusCode < 400 ? 'text-emerald-400' : 'text-red-400';
+            const logLine = document.createElement('div');
+            logLine.className = "flex flex-wrap items-center gap-2 border-b border-gray-900/50 pb-1 text-gray-300 font-mono tracking-tight";
+            logLine.innerHTML = `
+                <span class="text-blue-500">[${data.timestamp}]</span>
+                <span class="text-purple-400 font-medium">${data.domain || "Direct IP Loop"}</span>
+                <span class="text-gray-500 font-sans text-[10px] bg-gray-800/80 px-1.5 py-0.5 rounded border border-gray-700">${data.device}</span>
+                <span class="ml-auto font-bold ${statusColor}">HTTP ${data.statusCode}</span>
+            `;
+            
+            logContainer.appendChild(logLine);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            if (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+    };
+
+    ws.onerror = (err) => console.error("Pipeline Metrics WebSocket Core Error:", err);
+</script>
+</body>
+</html>
